@@ -23,7 +23,7 @@ function ApplicationLayout() {
   const [importerOpen, setImporterOpen] = useState(false);
 
   return (
-    <div id="app-root" className="h-screen w-screen flex overflow-hidden font-sans bg-slate-50 text-slate-800 antialiased selection:bg-blue-100 select-none">
+    <div id="app-root" className="h-screen w-screen flex overflow-hidden font-sans bg-slate-50 text-slate-800 antialiased selection:bg-blue-100">
       
       {/* 1. Notebooks sidebar Panel */}
       <NotebooksSidebar />

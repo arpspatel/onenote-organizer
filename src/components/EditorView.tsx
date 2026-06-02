@@ -44,14 +44,14 @@ export const EditorView: React.FC = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Sync internal state whenever active page shifts
+  // Sync internal state whenever active page shifts or updates externally (when save is not pending)
   useEffect(() => {
     if (activePage) {
       setTitle(activePage.title || '');
       setContent(activePage.content || '');
       setSaveStatus('idle');
     }
-  }, [activePageId]);
+  }, [activePageId, activePage?.title, activePage?.content]);
 
   // Debounced auto-save engine on modifications
   const triggerAutoSave = (updatedTitle: string, updatedContent: string) => {
