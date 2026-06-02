@@ -551,6 +551,139 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await removeHandleFromIndexedDB();
   };
 
+  const autoImportAllOneFiles = async (filesToImport: { name: string; notebookName: string; handle: FileSystemFileHandle }[]) => {
+    let currentNbs = [...notebooks];
+    let currentSecs = [...sections];
+    let currentPgs = [...pages];
+    let changesMade = false;
+    let lastPageIdSelected = activePageId;
+    let lastNotebookIdSelected = activeNotebookId;
+    let lastSectionIdSelected = activeSectionId;
+
+    const colors = [
+      'bg-blue-600',
+      'bg-indigo-600',
+      'bg-purple-600',
+      'bg-teal-600',
+      'bg-emerald-600',
+      'bg-amber-600',
+      'bg-rose-600'
+    ];
+
+    for (const fileObj of filesToImport) {
+      try {
+        const file = await fileObj.handle.getFile();
+        const buffer = await file.arrayBuffer();
+        const parsedData = parseOneNoteFile(buffer);
+        const sectionName = fileObj.name.replace(/\.one$/i, '');
+        const notebookName = fileObj.notebookName;
+
+        // Find or create notebook
+        let notebook = currentNbs.find(n => n.name.toLowerCase() === notebookName.toLowerCase());
+        let nbId = notebook?.id;
+        if (!nbId) {
+          nbId = 'nb_' + Math.random().toString(36).substring(2, 11);
+          const color = colors[currentNbs.length % colors.length];
+          notebook = {
+            id: nbId,
+            name: notebookName,
+            color,
+            userId: 'offline_user',
+            createdAt: createMockTimestamp(),
+            updatedAt: createMockTimestamp()
+          };
+          currentNbs.push(notebook);
+          changesMade = true;
+        }
+
+        // Find or create section
+        let sec = currentSecs.find(s => s.notebookId === nbId && s.name.toLowerCase() === sectionName.toLowerCase());
+        let secId = sec?.id;
+        if (!secId) {
+          secId = 'sec_' + Math.random().toString(36).substring(2, 11);
+          sec = {
+            id: secId,
+            notebookId: nbId,
+            name: sectionName,
+            color: 'bg-teal-650',
+            userId: 'offline_user',
+            createdAt: createMockTimestamp(),
+            updatedAt: createMockTimestamp()
+          };
+          currentSecs.push(sec);
+          changesMade = true;
+        }
+
+        // Build content
+        let markdownContent = '';
+        parsedData.blocks.forEach((block) => {
+          if (block.type === 'heading') {
+            markdownContent += `### ${block.content}\n\n`;
+          } else if (block.type === 'todo') {
+            markdownContent += `- [${block.checked ? 'x' : ' '}] ${block.content}\n`;
+          } else {
+            markdownContent += `${block.content}\n\n`;
+          }
+        });
+
+        if (!markdownContent.trim()) {
+          markdownContent = parsedData.rawText;
+        }
+
+        const pageTitle = parsedData.title || sectionName;
+
+        // Check if page already exists in this section (match case-insensitively)
+        const exPageIndex = currentPgs.findIndex(p => p.sectionId === secId && p.title.toLowerCase() === pageTitle.toLowerCase());
+        if (exPageIndex === -1) {
+          const pageId = 'page_' + Math.random().toString(36).substring(2, 11);
+          const newPage: Page = {
+            id: pageId,
+            notebookId: nbId,
+            sectionId: secId,
+            title: pageTitle,
+            content: markdownContent,
+            favorite: false,
+            userId: 'offline_user',
+            createdAt: createMockTimestamp(),
+            updatedAt: createMockTimestamp()
+          };
+          currentPgs = [newPage, ...currentPgs];
+          changesMade = true;
+          
+          if (!lastPageIdSelected) {
+            lastPageIdSelected = pageId;
+          }
+        } else {
+          // If exist but empty, update it with parsed content
+          const exPage = currentPgs[exPageIndex];
+          if (exPage.content.trim() === '' || exPage.content.includes('Write your note content here')) {
+            currentPgs[exPageIndex] = {
+              ...exPage,
+              content: markdownContent,
+              updatedAt: createMockTimestamp()
+            };
+            changesMade = true;
+          }
+          if (!lastPageIdSelected) {
+            lastPageIdSelected = exPage.id;
+          }
+        }
+
+        if (!lastNotebookIdSelected) lastNotebookIdSelected = nbId;
+        if (!lastSectionIdSelected) lastSectionIdSelected = secId;
+      } catch (err) {
+        console.warn(`Failed auto-importing file ${fileObj.name}:`, err);
+      }
+    }
+
+    if (changesMade) {
+      saveLocalChanges(currentNbs, currentSecs, currentPgs);
+      if (lastNotebookIdSelected) setActiveNotebookId(lastNotebookIdSelected);
+      if (lastSectionIdSelected) setActiveSectionId(lastSectionIdSelected);
+      if (lastPageIdSelected) setActivePageId(lastPageIdSelected);
+    }
+  };
+
   const scanDirectoryForOneFiles = async () => {
     if (!localDirectoryHandle) {
       setDetectedOneFiles([]);
@@ -562,7 +695,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const traverse = async (dirHandle: FileSystemDirectoryHandle, folderPath: string[]) => {
         for await (const entry of (dirHandle as any).values()) {
           if (entry.kind === 'file') {
-            if (entry.name.endsWith('.one')) {
+            if (entry.name.toLowerCase().endsWith('.one')) {
               const notebookName = folderPath.length > 0 ? folderPath[folderPath.length - 1] : localDirectoryHandle.name;
               results.push({
                 name: entry.name,
@@ -578,6 +711,10 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       await traverse(localDirectoryHandle, []);
       setDetectedOneFiles(results);
+
+      if (results.length > 0) {
+        await autoImportAllOneFiles(results);
+      }
     } catch (err) {
       console.warn("Failed scanning directory for .one files:", err);
     }
