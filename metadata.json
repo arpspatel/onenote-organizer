@@ -1,5 +1,5 @@
 {
-  "name": "OneNote Notes Organizer",
+  "name": "OneNote Organizer",
   "description": "Organize notebooks, sections, and pages with local offline support, .one file importing, and real-time auto-saving to local Markdown (.md) files.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
