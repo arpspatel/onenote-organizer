@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "Notebook": {
+      "title": "Notebook",
+      "description": "Top-level notebook container for sections and pages",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the notebook" },
+        "name": { "type": "string", "description": "Display name of the notebook" },
+        "color": { "type": "string", "description": "Color code or name for styling" },
+        "userId": { "type": "string", "description": "Owner userId" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Date of creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last updated" }
+      },
+      "required": ["id", "name", "userId", "createdAt", "updatedAt"]
+    },
+    "Section": {
+      "title": "Section",
+      "description": "A container for pages within a notebook",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the section" },
+        "notebookId": { "type": "string", "description": "Parent notebook identifier" },
+        "name": { "type": "string", "description": "Display name of the section" },
+        "color": { "type": "string", "description": "Color associated with the section" },
+        "userId": { "type": "string", "description": "Owner userId" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Date of creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last updated" }
+      },
+      "required": ["id", "notebookId", "name", "userId", "createdAt", "updatedAt"]
+    },
+    "Page": {
+      "title": "Page",
+      "description": "An individual note page with rich content and blocks",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the page" },
+        "notebookId": { "type": "string", "description": "Linked notebook identifier" },
+        "sectionId": { "type": "string", "description": "Linked section identifier" },
+        "title": { "type": "string", "description": "Title of the page" },
+        "content": { "type": "string", "description": "Full text or markdown content of the page" },
+        "favorite": { "type": "boolean", "description": "Starred or marked as favorite flag" },
+        "userId": { "type": "string", "description": "Owner userId" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Date of creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last updated" }
+      },
+      "required": ["id", "notebookId", "sectionId", "title", "content", "userId", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/notebooks/{notebookId}": {
+      "schema": "Notebook",
+      "description": "List of user-specific notebooks"
+    },
+    "/sections/{sectionId}": {
+      "schema": "Section",
+      "description": "List of sections inside notebooks"
+    },
+    "/pages/{pageId}": {
+      "schema": "Page",
+      "description": "Individual pages with notes content"
+    }
+  }
+}

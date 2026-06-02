@@ -1,0 +1,39 @@
+name: Build & Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Will trigger automatically when you push a version tag like v1.0.0
+  workflow_dispatch: # Allows you to manually trigger the desktop build from GitHub
+
+permissions:
+  contents: write # Crucial permission allowing actions to declare and upload release binaries
+
+jobs:
+  build-and-deploy:
+    name: Build Desktop Application
+    strategy:
+      matrix:
+        # Cross-compiles for Windows (.exe), macOS (.dmg), and Linux (.AppImage)
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Clean Install Dependencies
+        run: npm ci
+
+      - name: Compile Desktop App Bundle
+        run: npm run electron:build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Bypass signing prompts for simple builds
+          CSC_IDENTITY_AUTO_DISCOVERY: false

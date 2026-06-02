@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && (
+        request.auth.token.email_verified == true || 
+        request.auth.token.firebase.sign_in_provider == 'google.com'
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity validator: Notebook
+    function isValidNotebook(data) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.userId is string
+        && data.userId == request.auth.uid
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 200
+        && data.color is string
+        && data.color.size() <= 50;
+    }
+
+    // Entity validator: Section
+    function isValidSection(data) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.notebookId is string
+        && data.notebookId.size() <= 128
+        && data.userId is string
+        && data.userId == request.auth.uid
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 200
+        && data.color is string
+        && data.color.size() <= 50;
+    }
+
+    // Entity validator: Page
+    function isValidPage(data) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.notebookId is string
+        && data.notebookId.size() <= 128
+        && data.sectionId is string
+        && data.sectionId.size() <= 128
+        && data.userId is string
+        && data.userId == request.auth.uid
+        && data.title is string
+        && data.title.size() <= 300
+        && data.content is string
+        && data.content.size() <= 50000
+        && data.favorite is bool;
+    }
+
+    // Notebooks Collection Rules
+    match /notebooks/{notebookId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn() 
+        && isEmailVerified()
+        && isValidId(notebookId)
+        && isValidNotebook(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isEmailVerified()
+        && isValidId(notebookId)
+        && isValidNotebook(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'color', 'updatedAt']);
+
+      allow delete: if isSignedIn()
+        && existing().userId == request.auth.uid;
+    }
+
+    // Sections Collection Rules
+    match /sections/{sectionId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isEmailVerified()
+        && isValidId(sectionId)
+        && isValidSection(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        // Relational Sync Check: Verify parent notebook belongs to the same user
+        && get(/databases/$(database)/documents/notebooks/$(incoming().notebookId)).data.userId == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && isEmailVerified()
+        && isValidId(sectionId)
+        && isValidSection(incoming())
+        && incoming().userId == existing().userId
+        && incoming().notebookId == existing().notebookId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'color', 'updatedAt']);
+
+      allow delete: if isSignedIn()
+        && existing().userId == request.auth.uid;
+    }
+
+    // Pages Collection Rules
+    match /pages/{pageId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isEmailVerified()
+        && isValidId(pageId)
+        && isValidPage(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        // Relational Sync Checks: Verify notebook & section both belong to this user
+        && get(/databases/$(database)/documents/notebooks/$(incoming().notebookId)).data.userId == request.auth.uid
+        && get(/databases/$(database)/documents/sections/$(incoming().sectionId)).data.userId == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && isEmailVerified()
+        && isValidId(pageId)
+        && isValidPage(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'favorite', 'notebookId', 'sectionId', 'updatedAt'])
+        // Relational Sync Checks on update targets
+        && get(/databases/$(database)/documents/notebooks/$(incoming().notebookId)).data.userId == request.auth.uid
+        && get(/databases/$(database)/documents/sections/$(incoming().sectionId)).data.userId == request.auth.uid;
+
+      allow delete: if isSignedIn()
+        && existing().userId == request.auth.uid;
+    }
+  }
+}
