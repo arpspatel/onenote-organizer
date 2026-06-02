@@ -5,6 +5,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Notebook, Section, Page, Timestamp } from '../types';
+import { parseOneNoteFile } from '../onenoteParser';
 
 // IndexedDB database settings for persistent Directory Handles
 const DB_NAME = 'OneNoteCompanionWorkspaceDB';
@@ -111,6 +112,12 @@ interface NotesContextType {
   autoDownloadMd: boolean;
   setAutoDownloadMd: (val: boolean) => void;
   exportPageToMd: (pageId: string) => void;
+
+  // .one backup file loading features
+  detectedOneFiles: { name: string; notebookName: string; handle: FileSystemFileHandle }[];
+  scanDirectoryForOneFiles: () => Promise<void>;
+  importOneFile: (fileHandle: FileSystemFileHandle, notebookName: string) => Promise<void>;
+  importOneFileFromBuffer: (buffer: ArrayBuffer, fileName: string, notebookName?: string) => Promise<void>;
 }
 
 const NotesContext = createContext<NotesContextType | undefined>(undefined);
@@ -138,6 +145,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [localDirectoryHandle, setLocalDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [localDirectoryName, setLocalDirectoryName] = useState<string | null>(null);
   const [directoryPermissionGranted, setDirectoryPermissionGranted] = useState(false);
+  const [detectedOneFiles, setDetectedOneFiles] = useState<{ name: string; notebookName: string; handle: FileSystemFileHandle }[]>([]);
 
   // Settings
   const [autoDownloadMd, setAutoDownloadMdState] = useState(() => {
@@ -185,6 +193,74 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
   }, []);
+
+  // Listen for Electron IPC file-opening events on start
+  useEffect(() => {
+    if ((window as any).electronAPI) {
+      (window as any).electronAPI.onOpenFile(async (payload: { name: string; data: any }) => {
+        try {
+          const buffer = payload.data;
+          let arrayBuffer: ArrayBuffer;
+          if (buffer instanceof Uint8Array) {
+            arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+          } else if (buffer instanceof ArrayBuffer) {
+            arrayBuffer = buffer;
+          } else if (buffer && typeof buffer === 'object' && buffer.type === 'Buffer' && Array.isArray(buffer.data)) {
+            const u8 = new Uint8Array(buffer.data);
+            arrayBuffer = u8.buffer;
+          } else {
+            console.error("Unknown buffer serialization received in IPC:", buffer);
+            return;
+          }
+
+          const parsedData = parseOneNoteFile(arrayBuffer);
+          const sectionName = payload.name.replace(/\.one$/i, '');
+
+          // Check active notebook, or create a default "Imported Notebook"
+          let nbId = activeNotebookId || (notebooks.length > 0 ? notebooks[0].id : null);
+          let nbName = notebooks.find(n => n.id === nbId)?.name || 'Imported Notebook';
+          if (!nbId) {
+            nbId = await createNotebook(nbName, 'bg-blue-600');
+          }
+
+          let secId = activeSectionId;
+          const currentSections = sections.filter(s => s.notebookId === nbId);
+          if (!secId && currentSections.length > 0) {
+            secId = currentSections[0].id;
+          }
+          if (!secId) {
+            secId = await createSection(nbId!, sectionName, 'bg-teal-650');
+          }
+
+          // Build markdown content
+          let markdownContent = '';
+          parsedData.blocks.forEach((block) => {
+            if (block.type === 'heading') {
+              markdownContent += `### ${block.content}\n\n`;
+            } else if (block.type === 'todo') {
+              markdownContent += `- [${block.checked ? 'x' : ' '}] ${block.content}\n`;
+            } else {
+              markdownContent += `${block.content}\n\n`;
+            }
+          });
+
+          if (!markdownContent.trim()) {
+            markdownContent = parsedData.rawText;
+          }
+
+          const pageId = await createPage(nbId!, secId!, parsedData.title || sectionName, markdownContent);
+          setActiveNotebookId(nbId!);
+          setActiveSectionId(secId!);
+          setActivePageId(pageId);
+
+          alert(`Successfully mapped and imported backup: "${payload.name}"!`);
+        } catch (err) {
+          console.error("IPC .one file parse error:", err);
+          alert("Failed to parse the loaded OneNote file.");
+        }
+      });
+    }
+  }, [notebooks, sections, activeNotebookId, activeSectionId]);
 
   // Set default selection defaults on updates
   useEffect(() => {
@@ -475,6 +551,107 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await removeHandleFromIndexedDB();
   };
 
+  const scanDirectoryForOneFiles = async () => {
+    if (!localDirectoryHandle) {
+      setDetectedOneFiles([]);
+      return;
+    }
+    try {
+      const results: { name: string; notebookName: string; handle: FileSystemFileHandle }[] = [];
+
+      const traverse = async (dirHandle: FileSystemDirectoryHandle, folderPath: string[]) => {
+        for await (const entry of (dirHandle as any).values()) {
+          if (entry.kind === 'file') {
+            if (entry.name.endsWith('.one')) {
+              const notebookName = folderPath.length > 0 ? folderPath[folderPath.length - 1] : localDirectoryHandle.name;
+              results.push({
+                name: entry.name,
+                notebookName,
+                handle: entry as FileSystemFileHandle
+              });
+            }
+          } else if (entry.kind === 'directory') {
+            await traverse(entry, [...folderPath, entry.name]);
+          }
+        }
+      };
+
+      await traverse(localDirectoryHandle, []);
+      setDetectedOneFiles(results);
+    } catch (err) {
+      console.warn("Failed scanning directory for .one files:", err);
+    }
+  };
+
+  const importOneFileFromBuffer = async (buffer: ArrayBuffer, fileName: string, notebookName: string = 'Imported Notebook') => {
+    try {
+      const parsedData = parseOneNoteFile(buffer);
+      const sectionName = fileName.replace(/\.one$/i, '');
+
+      // Check if Notebook exists
+      let notebook = notebooks.find(n => n.name.toLowerCase() === notebookName.toLowerCase());
+      let nbId = notebook?.id;
+      if (!nbId) {
+        nbId = await createNotebook(notebookName, 'bg-blue-600');
+      }
+
+      // Check if Section exists under notebook
+      let sec = sections.find(s => s.notebookId === nbId && s.name.toLowerCase() === sectionName.toLowerCase());
+      let secId = sec?.id;
+      if (!secId) {
+        secId = await createSection(nbId!, sectionName, 'bg-teal-650');
+      }
+
+      // Create formatting
+      let markdownContent = '';
+      parsedData.blocks.forEach((block) => {
+        if (block.type === 'heading') {
+          markdownContent += `### ${block.content}\n\n`;
+        } else if (block.type === 'todo') {
+          markdownContent += `- [${block.checked ? 'x' : ' '}] ${block.content}\n`;
+        } else {
+          markdownContent += `${block.content}\n\n`;
+        }
+      });
+
+      if (!markdownContent.trim()) {
+        markdownContent = parsedData.rawText;
+      }
+
+      const pId = await createPage(nbId!, secId!, parsedData.title || sectionName, markdownContent);
+      
+      setActiveNotebookId(nbId!);
+      setActiveSectionId(secId!);
+      setActivePageId(pId);
+      
+      alert(`Successfully loaded backup file: "${fileName}" and imported page "${parsedData.title || sectionName}"!`);
+      await scanDirectoryForOneFiles();
+    } catch (err) {
+      console.error("Failed importing .one file:", err);
+      alert(`Error reading OneNote backup file "${fileName}".`);
+    }
+  };
+
+  const importOneFile = async (fileHandle: FileSystemFileHandle, notebookName: string) => {
+    try {
+      const file = await fileHandle.getFile();
+      const buffer = await file.arrayBuffer();
+      await importOneFileFromBuffer(buffer, fileHandle.name, notebookName);
+    } catch (err) {
+      console.error("Failed reading file handle:", err);
+      alert(`Error reading standard file "${fileHandle.name}".`);
+    }
+  };
+
+  // Sync directory scanning on permission validation
+  useEffect(() => {
+    if (localDirectoryHandle && directoryPermissionGranted) {
+      scanDirectoryForOneFiles();
+    } else {
+      setDetectedOneFiles([]);
+    }
+  }, [localDirectoryHandle, directoryPermissionGranted]);
+
   // Explicit exporter helper
   const exportPageToMd = (pageId: string) => {
     const target = pages.find(p => p.id === pageId);
@@ -521,7 +698,13 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       disconnectLocalDirectory,
       autoDownloadMd,
       setAutoDownloadMd,
-      exportPageToMd
+      exportPageToMd,
+
+      // .one backup features
+      detectedOneFiles,
+      scanDirectoryForOneFiles,
+      importOneFile,
+      importOneFileFromBuffer
     }}>
       {children}
     </NotesContext.Provider>

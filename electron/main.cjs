@@ -40,6 +40,26 @@ function createWindow() {
     {
       label: 'File',
       submenu: [
+        {
+          label: 'Open .one Backup File...',
+          accelerator: 'CmdOrCtrl+O',
+          click: async () => {
+            const { dialog } = require('electron');
+            const fs = require('fs');
+            const { filePaths } = await dialog.showOpenDialog({
+              properties: ['openFile'],
+              filters: [{ name: 'OneNote Files', extensions: ['one'] }]
+            });
+            if (filePaths && filePaths[0]) {
+              const buffer = fs.readFileSync(filePaths[0]);
+              mainWindow.webContents.send('open-one-file', {
+                name: path.basename(filePaths[0]),
+                data: buffer
+              });
+            }
+          }
+        },
+        { type: 'separator' },
         { role: 'quit' }
       ]
     },

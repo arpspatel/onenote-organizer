@@ -44,7 +44,9 @@ export const NotebooksSidebar: React.FC = () => {
     disconnectLocalDirectory,
     requestLocalDirectory,
     autoDownloadMd,
-    setAutoDownloadMd
+    setAutoDownloadMd,
+    detectedOneFiles,
+    importOneFile
   } = useNotes();
 
   const [addMode, setAddMode] = useState(false);
@@ -169,6 +171,33 @@ export const NotebooksSidebar: React.FC = () => {
             <span className="truncate">Auto-Download .md on Edit</span>
           </label>
         </div>
+
+        {/* Directory-scanned `.one` files list */}
+        {localDirectoryHandle && detectedOneFiles.length > 0 && (
+          <div className="pt-2 border-t border-slate-800/60 mt-2 space-y-1.5 bg-slate-950/20 p-2 rounded-lg">
+            <div className="flex items-center justify-between text-[9px] font-bold text-blue-400 uppercase tracking-wider">
+              <span>📦 Folder Backups ({detectedOneFiles.length})</span>
+            </div>
+            <div className="max-h-28 overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-slate-800/60 font-semibold text-slate-350">
+              {detectedOneFiles.map((f, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => importOneFile(f.handle, f.notebookName)}
+                  className="w-full text-left text-[9px] text-slate-300 hover:text-white hover:bg-slate-800 px-1.5 py-1 rounded transition-all flex items-center justify-between gap-1 group/item cursor-pointer"
+                  title={`Click to load and sync ${f.notebookName}/${f.name}`}
+                >
+                  <span className="truncate max-w-[130px] font-mono">
+                    {f.name.replace(/\.one$/i, '')}
+                  </span>
+                  <span className="text-[8px] bg-slate-800 text-blue-400 group-hover/item:bg-blue-600 group-hover/item:text-white font-bold px-1 py-0.5 rounded-sm transition-all shrink-0">
+                    Load
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Notebook Lists */}

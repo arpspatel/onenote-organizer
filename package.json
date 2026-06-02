@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "onenote-workspace",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -41,6 +41,7 @@
   "build": {
     "appId": "com.onenote.companion.workspace",
     "productName": "OneNote Companion Workspace",
+    "executableName": "onenote-workspace",
     "directories": {
       "output": "dist_electron"
     },

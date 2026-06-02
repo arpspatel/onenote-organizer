@@ -10,6 +10,7 @@ import { SectionsTabs } from './components/SectionsTabs';
 import { PageListSidebar } from './components/PageListSidebar';
 import { EditorView } from './components/EditorView';
 import { ImporterModal } from './components/ImporterModal';
+import { ApplicationMenuBar } from './components/ApplicationMenuBar';
 import { AlertCircle, Cloud, ArrowUpRight, Ban, X, Sparkles, BookMarked } from 'lucide-react';
 
 function ApplicationLayout() {
@@ -29,6 +30,9 @@ function ApplicationLayout() {
 
       {/* Main column */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        
+        {/* Top desktop-vibe file menu bar */}
+        <ApplicationMenuBar />
         
         {/* 2. Top sloped toolbar containing classic notebook section tabs */}
         <SectionsTabs onOpenImporter={() => setImporterOpen(true)} />
